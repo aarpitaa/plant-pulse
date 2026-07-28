@@ -1,0 +1,168 @@
+---
+# PlantPulse Edge Node Provisioning Playbook
+# Configures industrial edge nodes to run the local telemetry collector
+# and forward data to the central Kafka cluster.
+#
+# Usage:
+#   ansible-playbook -i inventory/edge-nodes edge-nodes.yml \
+#     --extra-vars "kafka_bootstrap=kafka.plantpulse.internal:9092"
+#
+# Requirements: Debian 12 / Ubuntu 22.04 LTS
+
+- name: PlantPulse Edge Node Bootstrap
+  hosts: edge_nodes
+  become: true
+  gather_facts: true
+
+  vars:
+    plantpulse_user: plantpulse
+    install_dir: /opt/plantpulse
+    log_dir: /var/log/plantpulse
+    config_dir: /etc/plantpulse
+    python_version: "3.11"
+    venv_dir: "{{ install_dir }}/venv"
+
+  pre_tasks:
+    - name: Verify OS family
+      ansible.builtin.assert:
+        that:
+          - ansible_os_family == 'Debian'
+          - ansible_distribution_version is version('22.04', '>=')
+        fail_msg: "Only Ubuntu 22.04+ is supported on edge nodes"
+
+  tasks:
+    # ── System packages ──────────────────────────────────────────────────────
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install system dependencies
+      ansible.builtin.apt:
+        name:
+          - python3.11
+          - python3.11-venv
+          - python3-pip
+          - libpq-dev
+          - libssl-dev
+          - libffi-dev
+          - curl
+          - wget
+          - jq
+          - htop
+          - logrotate
+        state: present
+
+    # ── Service user ──────────────────────────────────────────────────────────
+    - name: Create plantpulse system user
+      ansible.builtin.user:
+        name: "{{ plantpulse_user }}"
+        system: true
+        shell: /sbin/nologin
+        home: "{{ install_dir }}"
+        create_home: true
+
+    - name: Create directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ plantpulse_user }}"
+        group: "{{ plantpulse_user }}"
+        mode: "0750"
+      loop:
+        - "{{ install_dir }}"
+        - "{{ log_dir }}"
+        - "{{ config_dir }}"
+        - "{{ venv_dir }}"
+
+    # ── Python venv + service code ────────────────────────────────────────────
+    - name: Create Python virtual environment
+      ansible.builtin.command:
+        cmd: "python3.11 -m venv {{ venv_dir }}"
+        creates: "{{ venv_dir }}/bin/python"
+      become_user: "{{ plantpulse_user }}"
+
+    - name: Install Python dependencies
+      ansible.builtin.pip:
+        name:
+          - aiokafka>=0.11
+          - asyncpg>=0.29
+          - pydantic>=2.6
+          - httpx>=0.27
+          - prometheus-client>=0.20
+        virtualenv: "{{ venv_dir }}"
+        state: present
+      become_user: "{{ plantpulse_user }}"
+
+    - name: Copy edge telemetry collector
+      ansible.builtin.copy:
+        src: "files/edge-collector.py"
+        dest: "{{ install_dir }}/edge-collector.py"
+        owner: "{{ plantpulse_user }}"
+        mode: "0640"
+      notify: Restart edge collector
+
+    # ── Configuration ─────────────────────────────────────────────────────────
+    - name: Deploy edge config
+      ansible.builtin.template:
+        src: "templates/edge-config.yml.j2"
+        dest: "{{ config_dir }}/config.yml"
+        owner: "{{ plantpulse_user }}"
+        mode: "0640"
+      notify: Restart edge collector
+
+    # ── systemd service ───────────────────────────────────────────────────────
+    - name: Install systemd unit
+      ansible.builtin.template:
+        src: "templates/plantpulse-edge.service.j2"
+        dest: "/etc/systemd/system/plantpulse-edge.service"
+        mode: "0644"
+      notify:
+        - Reload systemd
+        - Restart edge collector
+
+    - name: Enable and start edge collector
+      ansible.builtin.systemd:
+        name: plantpulse-edge
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    # ── Log rotation ──────────────────────────────────────────────────────────
+    - name: Configure logrotate
+      ansible.builtin.copy:
+        dest: /etc/logrotate.d/plantpulse
+        content: |
+          {{ log_dir }}/*.log {
+              daily
+              rotate 7
+              compress
+              delaycompress
+              missingok
+              notifempty
+              postrotate
+                  systemctl kill -s HUP plantpulse-edge.service
+              endscript
+          }
+
+    # ── Node exporter (Prometheus) ────────────────────────────────────────────
+    - name: Install node_exporter
+      ansible.builtin.apt:
+        name: prometheus-node-exporter
+        state: present
+
+    - name: Enable node_exporter
+      ansible.builtin.systemd:
+        name: prometheus-node-exporter
+        enabled: true
+        state: started
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Restart edge collector
+      ansible.builtin.systemd:
+        name: plantpulse-edge
+        state: restarted

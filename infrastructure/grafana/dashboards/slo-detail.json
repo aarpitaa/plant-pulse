@@ -1,0 +1,97 @@
+{
+  "title": "PlantPulse — SLO Detail",
+  "uid": "plantpulse-slo",
+  "tags": ["plantpulse", "slo", "reliability"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "refresh": "1m",
+  "time": { "from": "now-7d", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "gauge",
+      "title": "API Availability",
+      "gridPos": { "x": 0, "y": 0, "w": 8, "h": 8 },
+      "targets": [{
+        "expr": "(1 - rate(http_requests_total{job=\"plantpulse-api\",status=~\"5..\"}[7d]) / rate(http_requests_total{job=\"plantpulse-api\"}[7d])) * 100"
+      }],
+      "options": {
+        "minValue": 99,
+        "maxValue": 100,
+        "thresholds": {
+          "steps": [
+            { "color": "red", "value": 99 },
+            { "color": "yellow", "value": 99.5 },
+            { "color": "green", "value": 99.9 }
+          ]
+        }
+      },
+      "fieldConfig": { "defaults": { "unit": "percent", "decimals": 4 } }
+    },
+    {
+      "id": 2,
+      "type": "gauge",
+      "title": "P95 Latency vs 300ms SLO",
+      "gridPos": { "x": 8, "y": 0, "w": 8, "h": 8 },
+      "targets": [{
+        "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job=\"plantpulse-api\"}[7d])) * 1000"
+      }],
+      "options": {
+        "minValue": 0,
+        "maxValue": 600,
+        "thresholds": {
+          "steps": [
+            { "color": "green", "value": 0 },
+            { "color": "yellow", "value": 200 },
+            { "color": "red", "value": 300 }
+          ]
+        }
+      },
+      "fieldConfig": { "defaults": { "unit": "ms", "decimals": 0 } }
+    },
+    {
+      "id": 3,
+      "type": "gauge",
+      "title": "Valid Event Rate vs 99.95% SLO",
+      "gridPos": { "x": 16, "y": 0, "w": 8, "h": 8 },
+      "targets": [{
+        "expr": "(rate(plantpulse_events_processed_total[7d]) / rate(plantpulse_events_received_total[7d])) * 100"
+      }],
+      "options": {
+        "minValue": 99,
+        "maxValue": 100,
+        "thresholds": {
+          "steps": [
+            { "color": "red", "value": 99 },
+            { "color": "yellow", "value": 99.9 },
+            { "color": "green", "value": 99.95 }
+          ]
+        }
+      },
+      "fieldConfig": { "defaults": { "unit": "percent", "decimals": 3 } }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Error Budget Burn Rate (30-day window)",
+      "gridPos": { "x": 0, "y": 8, "w": 24, "h": 10 },
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total{job=\"plantpulse-api\",status=~\"5..\"}[1h])) / sum(rate(http_requests_total{job=\"plantpulse-api\"}[1h])) / (1 - 0.999)",
+          "legendFormat": "1h burn rate"
+        },
+        {
+          "expr": "sum(rate(http_requests_total{job=\"plantpulse-api\",status=~\"5..\"}[6h])) / sum(rate(http_requests_total{job=\"plantpulse-api\"}[6h])) / (1 - 0.999)",
+          "legendFormat": "6h burn rate"
+        },
+        {
+          "expr": "vector(1)",
+          "legendFormat": "Baseline (1x = normal consumption)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "decimals": 2 }
+      }
+    }
+  ]
+}

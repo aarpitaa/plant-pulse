@@ -1,0 +1,126 @@
+groups:
+  # ─── SLO Alerts ──────────────────────────────────────────────────────────────
+  - name: slo
+    interval: 30s
+    rules:
+      - alert: HighErrorBudgetBurnRate
+        expr: |
+          (
+            rate(http_requests_total{job="plantpulse-api",status=~"5.."}[5m])
+            /
+            rate(http_requests_total{job="plantpulse-api"}[5m])
+          ) > 0.01
+        for: 2m
+        labels:
+          severity: critical
+          team: sre
+        annotations:
+          summary: "High API error rate burning error budget"
+          description: "Error rate {{ $value | humanizePercentage }} exceeds 1% SLO threshold"
+          runbook_url: "https://wiki.plantpulse.internal/runbooks/high-error-budget-burn"
+
+      - alert: APILatencyP95High
+        expr: |
+          histogram_quantile(0.95,
+            rate(http_request_duration_seconds_bucket{job="plantpulse-api"}[5m])
+          ) > 0.3
+        for: 5m
+        labels:
+          severity: warning
+          team: sre
+        annotations:
+          summary: "P95 API latency exceeds 300ms SLO"
+          description: "Current P95 latency: {{ $value | humanizeDuration }}"
+
+  # ─── Kafka Alerts ─────────────────────────────────────────────────────────────
+  - name: kafka
+    rules:
+      - alert: KafkaConsumerLagHigh
+        expr: |
+          sum(kafka_consumer_group_lag) by (consumer_group, topic) > 50000
+        for: 5m
+        labels:
+          severity: warning
+          team: sre
+        annotations:
+          summary: "Kafka consumer lag exceeding 50k messages"
+          description: "Group {{ $labels.consumer_group }} on topic {{ $labels.topic }}: lag={{ $value }}"
+          runbook_url: "https://wiki.plantpulse.internal/runbooks/kafka-consumer-lag"
+
+      - alert: KafkaDLQGrowing
+        expr: |
+          rate(kafka_topic_messages_in_total{topic="telemetry.dlq"}[5m]) > 10
+        for: 3m
+        labels:
+          severity: critical
+          team: sre
+        annotations:
+          summary: "DLQ is growing — malformed events arriving"
+          description: "DLQ growth rate: {{ $value }} msgs/sec"
+
+      - alert: KafkaBrokerDown
+        expr: up{job="kafka"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: sre
+        annotations:
+          summary: "Kafka broker {{ $labels.instance }} is down"
+
+  # ─── Machine Health Alerts ────────────────────────────────────────────────────
+  - name: machine-health
+    rules:
+      - alert: CriticalMachinesHigh
+        expr: plantpulse_machines_by_severity{severity="critical"} > 5
+        for: 2m
+        labels:
+          severity: critical
+          team: operations
+        annotations:
+          summary: "More than 5 machines in critical state"
+          description: "{{ $value }} machines reporting critical conditions"
+
+      - alert: TelemetryIngestionStopped
+        expr: |
+          rate(plantpulse_telemetry_events_processed_total[2m]) == 0
+        for: 3m
+        labels:
+          severity: critical
+          team: sre
+        annotations:
+          summary: "Telemetry ingestion has stopped"
+          description: "No events processed in the last 2 minutes"
+          runbook_url: "https://wiki.plantpulse.internal/runbooks/telemetry-ingestion-stopped"
+
+  # ─── Infrastructure Alerts ────────────────────────────────────────────────────
+  - name: infrastructure
+    rules:
+      - alert: PodCrashLooping
+        expr: |
+          increase(kube_pod_container_status_restarts_total{namespace="plantpulse-prod"}[1h]) > 5
+        labels:
+          severity: critical
+          team: sre
+        annotations:
+          summary: "Pod {{ $labels.pod }} is crash-looping"
+          description: "{{ $value }} restarts in the last hour"
+
+      - alert: PodNotReady
+        expr: |
+          kube_pod_status_ready{condition="true",namespace="plantpulse-prod"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          team: sre
+        annotations:
+          summary: "Pod {{ $labels.pod }} is not ready"
+
+      - alert: PostgreSQLConnectionPoolNearExhaustion
+        expr: |
+          pg_stat_database_numbackends / pg_settings_max_connections > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          team: sre
+        annotations:
+          summary: "PostgreSQL connection pool at {{ $value | humanizePercentage }}"

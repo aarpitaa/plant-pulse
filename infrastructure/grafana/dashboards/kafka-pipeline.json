@@ -1,0 +1,94 @@
+{
+  "title": "PlantPulse — Kafka Event Pipeline",
+  "uid": "plantpulse-kafka",
+  "tags": ["plantpulse", "kafka", "telemetry"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "refresh": "10s",
+  "time": { "from": "now-30m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Total Throughput",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "sum(rate(kafka_topic_messages_in_total[1m]))", "legendFormat": "Events/s" }],
+      "fieldConfig": { "defaults": { "unit": "reqps", "decimals": 0 } }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Global Consumer Lag",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "sum(kafka_consumer_group_lag)", "legendFormat": "Lag" }],
+      "options": {
+        "colorMode": "background",
+        "thresholds": {
+          "steps": [
+            { "color": "green", "value": 0 },
+            { "color": "yellow", "value": 10000 },
+            { "color": "red", "value": 50000 }
+          ]
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "DLQ Size",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "kafka_consumer_group_lag{topic=\"telemetry.dlq\"}", "legendFormat": "DLQ" }],
+      "options": {
+        "colorMode": "background",
+        "thresholds": {
+          "steps": [
+            { "color": "green", "value": 0 },
+            { "color": "yellow", "value": 100 },
+            { "color": "red", "value": 1000 }
+          ]
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Broker Status",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+      "targets": [{ "expr": "kafka_brokers", "legendFormat": "Brokers Online" }],
+      "options": {
+        "colorMode": "background",
+        "thresholds": {
+          "steps": [
+            { "color": "red", "value": 0 },
+            { "color": "yellow", "value": 1 },
+            { "color": "green", "value": 3 }
+          ]
+        }
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Per-Topic Throughput",
+      "gridPos": { "x": 0, "y": 4, "w": 24, "h": 8 },
+      "targets": [
+        { "expr": "rate(kafka_topic_messages_in_total{topic=\"telemetry.raw\"}[1m])", "legendFormat": "telemetry.raw IN" },
+        { "expr": "rate(kafka_topic_messages_out_total{topic=\"telemetry.raw\"}[1m])", "legendFormat": "telemetry.raw OUT" },
+        { "expr": "rate(kafka_topic_messages_in_total{topic=\"telemetry.valid\"}[1m])", "legendFormat": "telemetry.valid" },
+        { "expr": "rate(kafka_topic_messages_in_total{topic=\"telemetry.dlq\"}[1m])", "legendFormat": "DLQ (errors)" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" } }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Consumer Lag by Group",
+      "gridPos": { "x": 0, "y": 12, "w": 24, "h": 8 },
+      "targets": [
+        { "expr": "kafka_consumer_group_lag{consumer_group=\"ingestion-service\"}", "legendFormat": "ingestion-service" },
+        { "expr": "kafka_consumer_group_lag{consumer_group=\"health-processor\"}", "legendFormat": "health-processor" },
+        { "expr": "kafka_consumer_group_lag{consumer_group=\"reliability-controller\"}", "legendFormat": "reliability-controller" }
+      ]
+    }
+  ]
+}

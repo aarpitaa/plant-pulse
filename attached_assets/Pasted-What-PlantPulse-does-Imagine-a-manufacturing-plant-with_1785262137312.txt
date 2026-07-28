@@ -1,0 +1,586 @@
+What PlantPulse does
+Imagine a manufacturing plant with hundreds or thousands of machines.
+Each machine produces readings such as:
+{
+  "machine_id": "compressor-104",
+  "site_id": "plant-atlanta-01",
+  "timestamp": "2026-07-28T13:30:00Z",
+  "temperature_c": 92.4,
+  "pressure_psi": 147.8,
+  "vibration_mm_s": 8.2,
+  "status": "running"
+}
+Your platform:
+Generates simulated equipment telemetry.
+Sends events through Kafka.
+Processes them with Python services.
+Detects abnormal equipment or processing conditions.
+Stores current and historical machine health.
+Exposes APIs for querying plant status.
+Runs on Kubernetes.
+Monitors infrastructure and application reliability.
+Automatically responds to selected operational problems.
+Demonstrates disaster recovery across cloud providers.
+High-level architecture
+Industrial Equipment Simulators
+          |
+          v
+     Kafka Topics
+   telemetry.raw
+          |
+          v
+  Validation Service
+          |
+     +----+----+
+     |         |
+     v         v
+telemetry.valid   telemetry.dlq
+     |
+     v
+Health Processing Workers
+     |
+     +------------------+
+     |                  |
+     v                  v
+PostgreSQL       incidents.detected
+                           |
+                           v
+                    Incident Service
+                           |
+                           v
+                 API + Operations UI
+
+Prometheus <--- all services and Kubernetes
+     |
+     v
+Grafana Dashboards
+     |
+     v
+Alertmanager
+
+Reliability Controller
+     |
+     +--> scale workers
+     +--> quarantine bad events
+     +--> trigger rollback
+     +--> create incident record
+The seven parts that would make it impressive
+1. A genuine distributed application
+The project needs meaningful software, not only infrastructure configuration.
+Build at least four Python components:
+Equipment simulator
+Generates telemetry from hundreds of simulated devices.
+It should support:
+Configurable event rates
+Normal and abnormal operating modes
+Sudden temperature spikes
+Gradually increasing vibration
+Malformed messages
+Offline equipment
+Duplicate and out-of-order events
+Network delays
+Validation and ingestion service
+Consumes raw Kafka events and:
+Validates schemas
+Rejects invalid events
+Adds metadata
+Detects duplicates
+Sends poison messages to a dead-letter topic
+Exposes Prometheus metrics
+Health-processing service
+Calculates equipment health from recent readings.
+You do not need a sophisticated machine-learning model. Transparent rules are sufficient:
+if temperature > 90 and vibration > 7:
+    severity = "critical"
+elif temperature > 80 or vibration > 5:
+    severity = "warning"
+else:
+    severity = "normal"
+The SRE value comes from making this service reliable under high traffic and failures, not from producing the most advanced prediction algorithm.
+Reliability controller
+This is the project’s most impressive software component.
+Write a Python service that watches operational metrics and takes guarded actions. For example:
+Scale workers when Kafka consumer lag remains high.
+Stop retrying poison messages and route them to a dead-letter topic.
+Open an incident when error rates exceed an SLO threshold.
+Roll back a deployment after repeated health-check failures.
+Disable remediation after a maximum number of attempts.
+Record every automated action in an audit log.
+This turns the project from “I know DevOps tools” into:
+“I write software that operates and protects distributed production systems.”
+That distinction matters for an SRE Software Engineer position.
+2. Explicit reliability objectives
+Define what “reliable” means before building dashboards.
+Create service-level indicators and objectives such as:
+Service indicator	Target
+API availability	99.9%
+P95 API latency	Under 300 ms
+Valid events processed	99.95%
+Telemetry processing delay	Under 10 seconds
+Critical incidents detected	Within 30 seconds
+Recovery after worker failure	Under 2 minutes
+Recovery from failed deployment	Under 5 minutes
+Then create an error-budget document.
+For example:
+Monthly availability target: 99.9%
+Allowed monthly downtime: approximately 43 minutes
+Your system should calculate:
+Successful requests
+Failed requests
+Total requests
+Current availability
+Error-budget consumption
+Burn rate
+Time remaining before exhausting the budget
+Why this matters
+A typical candidate says:
+“I installed Prometheus and created Grafana dashboards.”
+A stronger candidate says:
+“I defined measurable SLOs, created burn-rate alerts and tested whether the system met its availability and latency targets.”
+3. Kubernetes beyond basic deployment
+Run the services on Kubernetes using:
+Deployments
+Services
+ConfigMaps
+Secrets
+Namespaces
+Ingress
+Horizontal Pod Autoscaler
+Pod disruption budgets
+Resource requests and limits
+Readiness probes
+Liveness probes
+Startup probes
+Network policies
+Service accounts and RBAC
+StatefulSets where appropriate
+Jobs for migrations
+Helm charts
+The repository should show that you understand why these resources exist.
+For example:
+Readiness probe
+Prevents Kubernetes from sending traffic to a service before it can successfully connect to Kafka and its database.
+Liveness probe
+Restarts a service that is running but permanently stuck.
+Pod disruption budget
+Prevents too many ingestion-service replicas from being unavailable during maintenance.
+Resource limits
+Protect the cluster from a runaway service while preventing excessive throttling.
+Horizontal autoscaling
+Scales workers based on CPU or, more impressively, Kafka consumer lag through a custom metric.
+4. Prometheus and Grafana that help diagnose incidents
+Do not make only CPU and memory graphs. Instrument the actual application.
+Application metrics
+telemetry_events_received_total
+telemetry_events_processed_total
+telemetry_events_invalid_total
+telemetry_processing_duration_seconds
+telemetry_processing_lag_seconds
+incidents_created_total
+remediation_actions_total
+remediation_failures_total
+api_requests_total
+api_request_duration_seconds
+Kafka metrics
+Monitor:
+Producer throughput
+Consumer throughput
+Consumer lag
+Failed deliveries
+Partition distribution
+Rebalancing
+Dead-letter-topic growth
+Kubernetes metrics
+Monitor:
+Pod restarts
+Unavailable replicas
+CPU throttling
+Memory pressure
+Pending pods
+Deployment failures
+Node health
+Grafana dashboards
+Create four targeted dashboards:
+Executive reliability overview
+Current SLO compliance
+Error-budget status
+Active incidents
+Event-processing health
+Application performance
+Request rate
+Error rate
+Latency percentiles
+Dependency failures
+Kafka operations
+Events per second
+Consumer lag
+Partition health
+Dead-letter events
+Kubernetes operations
+Pod health
+Resource utilization
+Restarts
+Autoscaling activity
+A recruiter should be able to open one screenshot and immediately recognize a serious operational project.
+5. Failure injection and incident response
+This is where the project becomes an SRE project rather than a deployment project.
+Create repeatable failure experiments.
+Experiment 1: Kill an ingestion pod
+Expected result:
+Kubernetes replaces it.
+Remaining replicas continue processing.
+The availability SLO remains intact.
+Kafka retains unprocessed events.
+Processing catches up after recovery.
+Experiment 2: Generate a Kafka backlog
+Increase the telemetry rate from 100 to 2,000 events per second.
+Expected result:
+Consumer lag alert fires.
+Horizontal autoscaling increases worker replicas.
+Lag returns below the threshold.
+Replicas later scale down safely.
+Experiment 3: Deploy broken code
+Deploy a version whose health endpoint fails.
+Expected result:
+Readiness checks prevent traffic from reaching it.
+CI/CD smoke tests fail.
+The deployment automatically rolls back.
+An incident record is created.
+Experiment 4: Introduce malformed events
+Expected result:
+Valid events continue processing.
+Invalid events move to the dead-letter topic.
+No infinite retry loop develops.
+An alert fires if the dead-letter rate becomes abnormal.
+Experiment 5: Add database latency
+Expected result:
+API latency increases.
+Prometheus identifies the database dependency as the bottleneck.
+Circuit-breaker or timeout logic prevents request pileups.
+The system recovers after the latency is removed.
+Experiment 6: Simulate a cloud outage
+Expected result:
+Backups are restored to the recovery environment.
+Services launch in the secondary cloud.
+A documented recovery-time objective is measured.
+For every experiment, record:
+Detection time
+Alert time
+Mitigation time
+Recovery time
+Data loss, if any
+Root cause
+Preventive improvement
+6. Multi-cloud design without pretending to run everything globally
+Do not spend thousands of dollars operating full production clusters in three clouds.
+Use a credible strategy:
+Azure: primary environment
+Deploy the complete system to:
+AKS
+Azure Container Registry
+Azure Database for PostgreSQL
+Azure Blob Storage
+Azure networking and identity services
+GCP: disaster-recovery environment
+Create a smaller standby deployment using:
+GKE
+Artifact Registry
+Cloud SQL
+Cloud Storage
+GCP IAM
+Demonstrate that the same Helm charts deploy to both AKS and GKE.
+Alibaba Cloud: portability layer
+Create:
+Terraform module or documented deployment configuration for ACK
+OSS backup configuration
+RAM role design
+Container Registry configuration
+Provider-specific variables
+A small temporary deployment is preferable, but a tested infrastructure module and detailed architecture are still useful when cost or account availability limits a full environment.
+What makes this impressive
+You are not claiming:
+“I know every service in three clouds.”
+You are demonstrating:
+“I understand portable cloud architecture, while recognizing the identity, networking, storage and managed-service differences between providers.”
+That is a much more defensible interview answer.
+7. A real CI/CD and operational workflow
+Your GitHub Actions pipeline should include:
+Pull request opened
+       |
+       v
+Formatting and linting
+       |
+       v
+Unit tests
+       |
+       v
+Integration tests with Kafka/PostgreSQL
+       |
+       v
+Build Docker images
+       |
+       v
+Dependency and image security scan
+       |
+       v
+Push versioned images
+       |
+       v
+Deploy to staging
+       |
+       v
+Run smoke and load tests
+       |
+       v
+Manual production approval
+       |
+       v
+Canary deployment
+       |
+       v
+Evaluate health metrics
+       |
+   +---+---+
+   |       |
+healthy   unhealthy
+   |       |
+promote   rollback
+Include:
+Protected branches
+Pull-request checks
+Immutable image tags
+Environment-specific configuration
+OIDC cloud authentication instead of permanent cloud keys
+Database migration handling
+Deployment approvals
+Automated rollback
+Release notes
+Test reports
+Security scanning
+Honeywell’s posting specifically emphasizes continuous integration/deployment, automated testing, software lifecycle practices and troubleshooting, so showing the complete path from code change through reliable deployment is especially important.
+Where Ansible belongs
+Kubernetes and cloud resources do not naturally require Ansible for everything, so do not force it into the wrong place.
+Use Ansible for an on-premises plant edge environment.
+Provision two or three Linux VMs that represent industrial-site gateway machines. Ansible should:
+Create service users
+Install Docker or required packages
+Configure system limits
+Install the equipment simulator
+Configure TLS certificates
+Install a metrics agent
+Configure log rotation
+Install and configure an NGINX reverse proxy
+Start systemd services
+Apply security hardening
+Perform rolling updates
+That creates a credible hybrid-cloud story:
+Factory/on-premise edge
+        |
+        | Kafka-compatible secured connection
+        v
+Cloud Kubernetes platform
+This is significantly more appropriate for Honeywell than using Ansible to install a random web server with no connection to the project.
+Security requirements
+Since the role values cybersecurity principles, include:
+Kubernetes RBAC
+Least-privilege cloud identities
+Network policies
+TLS between major components
+Secret management
+No credentials committed to Git
+Container vulnerability scanning
+Dependency scanning
+Signed or traceable container images
+API authentication
+Rate limiting
+Input validation
+Audit logs for remediation actions
+Restricted administrative endpoints
+Backup encryption
+Basic threat model
+Create a small threat-model document covering:
+Compromised equipment simulator
+Malicious telemetry payloads
+Exposed Kafka credentials
+Container escape risk
+Excessively privileged Kubernetes service account
+Unauthorized remediation request
+Supply-chain compromise
+Repository structure
+plantpulse/
+├── services/
+│   ├── equipment-simulator/
+│   ├── ingestion-service/
+│   ├── health-processor/
+│   ├── incident-api/
+│   └── reliability-controller/
+├── shared/
+│   ├── event-schemas/
+│   └── python-libraries/
+├── infrastructure/
+│   ├── terraform/
+│   │   ├── modules/
+│   │   ├── azure/
+│   │   ├── gcp/
+│   │   └── alibaba/
+│   ├── ansible/
+│   ├── kubernetes/
+│   └── helm/
+├── observability/
+│   ├── prometheus/
+│   ├── grafana/
+│   └── alerts/
+├── tests/
+│   ├── integration/
+│   ├── performance/
+│   └── resilience/
+├── experiments/
+│   ├── pod-failure/
+│   ├── kafka-backlog/
+│   ├── database-latency/
+│   └── failed-deployment/
+├── docs/
+│   ├── architecture.md
+│   ├── slo.md
+│   ├── disaster-recovery.md
+│   ├── threat-model.md
+│   ├── runbooks/
+│   ├── postmortems/
+│   └── architecture-decisions/
+└── .github/workflows/
+Documentation that recruiters rarely see in personal projects
+The documentation may distinguish you as much as the code.
+Include:
+Architecture diagram
+Show:
+Data flow
+Trust boundaries
+Cloud resources
+Kubernetes components
+Failure points
+Observability flow
+SLO specification
+Explain:
+What users care about
+How each SLI is calculated
+Why each target was selected
+How the error budget controls releases
+Runbooks
+Examples:
+Kafka consumer lag is increasing
+API error rate is above 5%
+Pods are repeatedly restarting
+PostgreSQL connections are exhausted
+Dead-letter topic is growing
+Deployment rollback failed
+Primary cloud region is unavailable
+Blameless postmortems
+Create at least two postmortems from your failure experiments.
+Each should include:
+Incident summary
+User impact
+Timeline
+Root cause
+Contributing factors
+What worked
+What failed
+Corrective actions
+Owners and priorities
+Architecture decision records
+Examples:
+Why Kafka was selected
+Why PostgreSQL was selected
+Why Azure is the primary cloud
+Why automatic remediation has safety limits
+Why the project uses Helm
+When multi-cloud is and is not worth the complexity
+Measurable results to produce
+Do not invent résumé numbers in advance. Run experiments and report actual measurements.
+Try to demonstrate results such as:
+Sustained processing of a measured number of events per second
+P95 processing latency under a measured threshold
+Recovery from pod failure within a measured duration
+Reduced consumer lag after autoscaling
+Detection of a broken deployment within a measured duration
+Successful automatic rollback
+Recovery of the platform in GCP within the documented RTO
+No lost acknowledged events during selected failure tests
+Reduced mean time to detection after adding SLO-based alerts
+Reduced mean time to recovery after adding automated runbooks
+A good performance report might show:
+Test	Before improvement	After improvement
+Sustainable ingestion rate	400 events/sec	1,600 events/sec
+P95 processing latency	2.1 sec	480 ms
+Worker-failure recovery	4 min 20 sec	55 sec
+Backlog recovery	14 min	4 min
+Failed-release recovery	Manual	Automatic rollback
+Those figures are only examples. Your résumé must use the actual numbers produced by your tests.
+Best demo sequence
+The demo should be approximately five minutes.
+Show the architecture.
+Open the operations dashboard.
+Show normal telemetry flowing through Kafka.
+Increase event volume sharply.
+Show consumer lag increasing.
+Show an alert firing.
+Show Kubernetes scaling the processing workers.
+Show consumer lag recovering.
+Deploy a deliberately broken version.
+Show readiness checks failing and the pipeline rolling back.
+Open the generated incident record and runbook.
+Show the postmortem from a previous failure test.
+That tells a complete story:
+“I built it, measured it, broke it, detected the failure, recovered it and documented how to prevent recurrence.”
+What not to do
+Avoid presenting the project as impressive merely because it contains many tool names.
+A weak version would be:
+One FastAPI endpoint
+Kafka installed but barely used
+One Kubernetes deployment
+One Grafana CPU dashboard
+A CI pipeline that only builds Docker
+Terraform copied from a tutorial
+No failure testing
+No SLOs
+No explanation of architectural decisions
+A recruiter can recognize a technology checklist project.
+The impressive version has:
+A clear industrial use case
+Meaningful Python software
+Distributed-system behavior
+Measured SLOs
+Failure experiments
+Automatic but guarded remediation
+Multi-cloud portability
+Security decisions
+Tests and deployment controls
+Runbooks and postmortems
+Realistic build scope
+Strong minimum version: 6–8 weeks
+Build:
+Python simulator
+Kafka ingestion and processing
+PostgreSQL
+Local Kubernetes
+Helm
+Prometheus and Grafana
+Three failure experiments
+GitHub Actions deployment
+Azure AKS deployment
+SLO document
+Two runbooks
+One postmortem
+Standout version: 10–14 weeks
+Add:
+Python reliability controller
+Kafka-lag autoscaling
+Canary deployment and rollback
+Ansible-managed edge nodes
+GCP disaster-recovery environment
+Alibaba Terraform configuration
+Security hardening
+Load and resilience reports
+OpenTelemetry logs/traces
+Multiple postmortems
+Recorded technical demonstration
+You do not need every feature completed before applying. A polished first version with Azure, Kubernetes, Kafka, observability, CI/CD and failure recovery would already be useful.

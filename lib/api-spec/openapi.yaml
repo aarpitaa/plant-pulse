@@ -1,0 +1,715 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: PlantPulse Industrial Reliability Platform API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health check
+  - name: dashboard
+    description: Executive overview
+  - name: sites
+    description: Plant sites
+  - name: machines
+    description: Industrial machines
+  - name: incidents
+    description: Operational incidents
+  - name: slo
+    description: Service level objectives
+  - name: remediation
+    description: Automated remediation audit
+  - name: simulator
+    description: Equipment telemetry simulator
+  - name: kafka
+    description: Kafka / event-bus metrics
+
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  # ── Dashboard ──────────────────────────────────────────────────────────────
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: Executive reliability overview
+      responses:
+        "200":
+          description: Summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+  # ── Sites ──────────────────────────────────────────────────────────────────
+  /sites:
+    get:
+      operationId: listSites
+      tags: [sites]
+      summary: List all plant sites
+      responses:
+        "200":
+          description: Site list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Site"
+
+  /sites/{siteId}:
+    get:
+      operationId: getSite
+      tags: [sites]
+      summary: Get a site with machine health rollup
+      parameters:
+        - in: path
+          name: siteId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Site detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SiteDetail"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  # ── Machines ───────────────────────────────────────────────────────────────
+  /machines:
+    get:
+      operationId: listMachines
+      tags: [machines]
+      summary: List all machines
+      parameters:
+        - in: query
+          name: siteId
+          schema: { type: string }
+          description: Filter by site
+        - in: query
+          name: severity
+          schema:
+            type: string
+            enum: [normal, warning, critical]
+          description: Filter by current severity
+        - in: query
+          name: limit
+          schema: { type: number, default: 50 }
+        - in: query
+          name: offset
+          schema: { type: number, default: 0 }
+      responses:
+        "200":
+          description: Machine list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MachineList"
+
+  /machines/{machineId}:
+    get:
+      operationId: getMachine
+      tags: [machines]
+      summary: Get machine health and current readings
+      parameters:
+        - in: path
+          name: machineId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Machine detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MachineDetail"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /telemetry:
+    get:
+      operationId: getMachineTelemetry
+      tags: [machines]
+      summary: Get recent telemetry history (filter by machineId)
+      parameters:
+        - in: query
+          name: machineId
+          required: true
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: number, default: 100 }
+        - in: query
+          name: since
+          schema: { type: string, format: date-time }
+          description: ISO8601 timestamp — only return readings after this time
+      responses:
+        "200":
+          description: Telemetry history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TelemetryReading"
+
+  # ── Incidents ──────────────────────────────────────────────────────────────
+  /incidents:
+    get:
+      operationId: listIncidents
+      tags: [incidents]
+      summary: List incidents with optional filters
+      parameters:
+        - in: query
+          name: siteId
+          schema: { type: string }
+        - in: query
+          name: machineId
+          schema: { type: string }
+        - in: query
+          name: severity
+          schema:
+            type: string
+            enum: [warning, critical]
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [open, acknowledged, resolved]
+        - in: query
+          name: limit
+          schema: { type: number, default: 50 }
+        - in: query
+          name: offset
+          schema: { type: number, default: 0 }
+      responses:
+        "200":
+          description: Incident list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IncidentList"
+    post:
+      operationId: createIncident
+      tags: [incidents]
+      summary: Create a new incident (used by reliability controller)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IncidentInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Incident"
+
+  /incidents/{id}:
+    get:
+      operationId: getIncident
+      tags: [incidents]
+      summary: Get incident detail with timeline
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: number }
+      responses:
+        "200":
+          description: Incident detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Incident"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+    patch:
+      operationId: updateIncident
+      tags: [incidents]
+      summary: Update incident status (acknowledge, resolve)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: number }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IncidentUpdate"
+      responses:
+        "200":
+          description: Updated incident
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Incident"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  # ── SLO ───────────────────────────────────────────────────────────────────
+  /slo/status:
+    get:
+      operationId: getSloStatus
+      tags: [slo]
+      summary: Current SLO compliance and error-budget metrics
+      responses:
+        "200":
+          description: SLO status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SloStatus"
+
+  # ── Remediation ───────────────────────────────────────────────────────────
+  /remediation/audit:
+    get:
+      operationId: listRemediationActions
+      tags: [remediation]
+      summary: Audit log of all automated controller actions
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: number, default: 50 }
+        - in: query
+          name: offset
+          schema: { type: number, default: 0 }
+      responses:
+        "200":
+          description: Remediation action list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RemediationAction"
+
+  /remediation/actions:
+    post:
+      operationId: triggerRemediationAction
+      tags: [remediation]
+      summary: Trigger a manual remediation action
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RemediationActionInput"
+      responses:
+        "201":
+          description: Action triggered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RemediationAction"
+
+  # ── Simulator ─────────────────────────────────────────────────────────────
+  /simulator/status:
+    get:
+      operationId: getSimulatorStatus
+      tags: [simulator]
+      summary: Get simulator status and current config
+      responses:
+        "200":
+          description: Simulator status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimulatorStatus"
+
+  /simulator/start:
+    post:
+      operationId: startSimulator
+      tags: [simulator]
+      summary: Start the equipment simulator
+      responses:
+        "200":
+          description: Started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimulatorStatus"
+
+  /simulator/stop:
+    post:
+      operationId: stopSimulator
+      tags: [simulator]
+      summary: Stop the equipment simulator
+      responses:
+        "200":
+          description: Stopped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimulatorStatus"
+
+  /simulator/config:
+    patch:
+      operationId: updateSimulatorConfig
+      tags: [simulator]
+      summary: Update simulator configuration (event rate, anomaly injection)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SimulatorConfigUpdate"
+      responses:
+        "200":
+          description: Updated config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimulatorStatus"
+
+  /simulator/experiments/{experiment}:
+    post:
+      operationId: runExperiment
+      tags: [simulator]
+      summary: Trigger a chaos engineering experiment
+      parameters:
+        - in: path
+          name: experiment
+          required: true
+          schema:
+            type: string
+            enum: [pod-failure, kafka-backlog, malformed-events, database-latency, failed-deployment]
+      responses:
+        "200":
+          description: Experiment triggered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExperimentResult"
+
+  # ── Kafka metrics ─────────────────────────────────────────────────────────
+  /kafka/metrics:
+    get:
+      operationId: getKafkaMetrics
+      tags: [kafka]
+      summary: Kafka/event-bus consumer lag, throughput, and DLQ metrics
+      responses:
+        "200":
+          description: Kafka metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KafkaMetrics"
+
+components:
+  schemas:
+    # ── Core ─────────────────────────────────────────────────────────────────
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string }
+
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+
+    # ── Dashboard ─────────────────────────────────────────────────────────────
+    DashboardSummary:
+      type: object
+      required:
+        - totalMachines
+        - criticalCount
+        - warningCount
+        - normalCount
+        - openIncidents
+        - criticalIncidents
+        - sloCompliance
+        - errorBudgetRemaining
+        - burnRate
+        - eventsPerSecond
+        - processingLagSeconds
+        - recentIncidents
+      properties:
+        totalMachines: { type: number }
+        criticalCount: { type: number }
+        warningCount: { type: number }
+        normalCount: { type: number }
+        openIncidents: { type: number }
+        criticalIncidents: { type: number }
+        sloCompliance: { type: number, description: "0–100 percentage" }
+        errorBudgetRemaining: { type: number, description: "0–100 percentage remaining" }
+        burnRate: { type: number }
+        eventsPerSecond: { type: number }
+        processingLagSeconds: { type: number }
+        recentIncidents:
+          type: array
+          items:
+            $ref: "#/components/schemas/Incident"
+
+    # ── Sites ─────────────────────────────────────────────────────────────────
+    Site:
+      type: object
+      required: [id, siteId, name, location, totalMachines, criticalCount, warningCount, normalCount, createdAt]
+      properties:
+        id: { type: number }
+        siteId: { type: string }
+        name: { type: string }
+        location: { type: string }
+        totalMachines: { type: number }
+        criticalCount: { type: number }
+        warningCount: { type: number }
+        normalCount: { type: number }
+        createdAt: { type: string, format: date-time }
+
+    SiteDetail:
+      type: object
+      required: [id, siteId, name, location, machines, createdAt]
+      properties:
+        id: { type: number }
+        siteId: { type: string }
+        name: { type: string }
+        location: { type: string }
+        machines:
+          type: array
+          items:
+            $ref: "#/components/schemas/MachineHealth"
+        createdAt: { type: string, format: date-time }
+
+    # ── Machines ──────────────────────────────────────────────────────────────
+    MachineHealth:
+      type: object
+      required: [id, machineId, siteId, name, machineType, status, severity, temperatureC, pressurePsi, vibrationMmS, lastReadingAt]
+      properties:
+        id: { type: number }
+        machineId: { type: string }
+        siteId: { type: string }
+        name: { type: string }
+        machineType: { type: string }
+        status: { type: string, enum: [running, stopped, maintenance, offline] }
+        severity: { type: string, enum: [normal, warning, critical] }
+        temperatureC: { type: number }
+        pressurePsi: { type: number }
+        vibrationMmS: { type: number }
+        lastReadingAt: { type: string, format: date-time }
+
+    MachineList:
+      type: object
+      required: [machines, total]
+      properties:
+        machines:
+          type: array
+          items:
+            $ref: "#/components/schemas/MachineHealth"
+        total: { type: number }
+
+    MachineDetail:
+      type: object
+      required: [machine, recentTelemetry, activeIncidents]
+      properties:
+        machine:
+          $ref: "#/components/schemas/MachineHealth"
+        recentTelemetry:
+          type: array
+          items:
+            $ref: "#/components/schemas/TelemetryReading"
+        activeIncidents:
+          type: array
+          items:
+            $ref: "#/components/schemas/Incident"
+
+    TelemetryReading:
+      type: object
+      required: [id, machineId, siteId, timestamp, temperatureC, pressurePsi, vibrationMmS, status]
+      properties:
+        id: { type: number }
+        machineId: { type: string }
+        siteId: { type: string }
+        timestamp: { type: string, format: date-time }
+        temperatureC: { type: number }
+        pressurePsi: { type: number }
+        vibrationMmS: { type: number }
+        status: { type: string }
+        isAnomaly: { type: boolean }
+
+    # ── Incidents ─────────────────────────────────────────────────────────────
+    Incident:
+      type: object
+      required: [id, machineId, siteId, severity, status, title, detectedAt, createdAt]
+      properties:
+        id: { type: number }
+        machineId: { type: string }
+        siteId: { type: string }
+        severity: { type: string, enum: [warning, critical] }
+        status: { type: string, enum: [open, acknowledged, resolved] }
+        title: { type: string }
+        description: { type: ["string", "null"] }
+        detectedAt: { type: string, format: date-time }
+        acknowledgedAt: { type: ["string", "null"], format: date-time }
+        resolvedAt: { type: ["string", "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+        remediationCount: { type: number }
+
+    IncidentList:
+      type: object
+      required: [incidents, total]
+      properties:
+        incidents:
+          type: array
+          items:
+            $ref: "#/components/schemas/Incident"
+        total: { type: number }
+
+    IncidentInput:
+      type: object
+      required: [machineId, siteId, severity, title]
+      properties:
+        machineId: { type: string }
+        siteId: { type: string }
+        severity: { type: string, enum: [warning, critical] }
+        title: { type: string }
+        description: { type: string }
+
+    IncidentUpdate:
+      type: object
+      properties:
+        status: { type: string, enum: [open, acknowledged, resolved] }
+        description: { type: string }
+
+    # ── SLO ───────────────────────────────────────────────────────────────────
+    SloIndicator:
+      type: object
+      required: [name, target, actual, compliant, errorBudgetUsed]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        target: { type: number }
+        actual: { type: number }
+        compliant: { type: boolean }
+        errorBudgetUsed: { type: number, description: "0–100 percent of monthly budget used" }
+
+    SloStatus:
+      type: object
+      required: [indicators, overallCompliance, errorBudgetRemaining, burnRate, allowedDowntimeMinutes, usedDowntimeMinutes, calculatedAt]
+      properties:
+        indicators:
+          type: array
+          items:
+            $ref: "#/components/schemas/SloIndicator"
+        overallCompliance: { type: number }
+        errorBudgetRemaining: { type: number }
+        burnRate: { type: number }
+        allowedDowntimeMinutes: { type: number }
+        usedDowntimeMinutes: { type: number }
+        calculatedAt: { type: string, format: date-time }
+
+    # ── Remediation ───────────────────────────────────────────────────────────
+    RemediationAction:
+      type: object
+      required: [id, trigger, action, outcome, performedAt]
+      properties:
+        id: { type: number }
+        trigger: { type: string }
+        action: { type: string }
+        outcome: { type: string, enum: [success, failure, skipped] }
+        metadata: { type: ["string", "null"], description: "JSON metadata blob" }
+        performedAt: { type: string, format: date-time }
+
+    RemediationActionInput:
+      type: object
+      required: [trigger, action]
+      properties:
+        trigger: { type: string }
+        action:
+          type: string
+          enum: [scale-workers, quarantine-events, rollback-deployment, open-incident, disable-remediation]
+        metadata: { type: string }
+
+    # ── Simulator ─────────────────────────────────────────────────────────────
+    SimulatorStatus:
+      type: object
+      required: [running, eventsPerSecond, machineCount, anomalyMode, dlqEnabled, startedAt]
+      properties:
+        running: { type: boolean }
+        eventsPerSecond: { type: number }
+        machineCount: { type: number }
+        anomalyMode: { type: string, enum: [none, temperature-spike, vibration-drift, malformed, offline, mixed] }
+        dlqEnabled: { type: boolean }
+        startedAt: { type: ["string", "null"], format: date-time }
+        totalEventsGenerated: { type: number }
+        totalEventsProcessed: { type: number }
+        totalEventsDlq: { type: number }
+
+    SimulatorConfigUpdate:
+      type: object
+      properties:
+        eventsPerSecond: { type: number, minimum: 1, maximum: 5000 }
+        anomalyMode: { type: string, enum: [none, temperature-spike, vibration-drift, malformed, offline, mixed] }
+        dlqEnabled: { type: boolean }
+
+    ExperimentResult:
+      type: object
+      required: [experiment, triggered, message]
+      properties:
+        experiment: { type: string }
+        triggered: { type: boolean }
+        message: { type: string }
+
+    # ── Kafka / Event-bus ─────────────────────────────────────────────────────
+    TopicMetrics:
+      type: object
+      required: [topic, messagesIn, messagesOut, consumerLag, partitions]
+      properties:
+        topic: { type: string }
+        messagesIn: { type: number }
+        messagesOut: { type: number }
+        consumerLag: { type: number }
+        partitions: { type: number }
+
+    KafkaMetrics:
+      type: object
+      required: [topics, totalEventsPerSecond, totalConsumerLag, dlqSize, dlqGrowthRate, brokerHealthy, updatedAt]
+      properties:
+        topics:
+          type: array
+          items:
+            $ref: "#/components/schemas/TopicMetrics"
+        totalEventsPerSecond: { type: number }
+        totalConsumerLag: { type: number }
+        dlqSize: { type: number }
+        dlqGrowthRate: { type: number, description: "Messages per minute" }
+        brokerHealthy: { type: boolean }
+        updatedAt: { type: string, format: date-time }

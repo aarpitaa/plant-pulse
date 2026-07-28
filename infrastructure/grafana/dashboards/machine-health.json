@@ -1,0 +1,110 @@
+{
+  "title": "PlantPulse — Machine Health",
+  "uid": "plantpulse-machines",
+  "tags": ["plantpulse", "machines", "telemetry"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "refresh": "15s",
+  "templating": {
+    "list": [
+      {
+        "name": "site",
+        "type": "query",
+        "query": "label_values(plantpulse_machine_temperature_celsius, site_id)",
+        "label": "Plant Site",
+        "multi": false,
+        "includeAll": true,
+        "current": { "value": "All" }
+      },
+      {
+        "name": "machine",
+        "type": "query",
+        "query": "label_values(plantpulse_machine_temperature_celsius{site_id=~\"$site\"}, machine_id)",
+        "label": "Machine",
+        "multi": true,
+        "includeAll": true
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Temperature (°C) — $machine",
+      "gridPos": { "x": 0, "y": 0, "w": 8, "h": 8 },
+      "targets": [{
+        "expr": "plantpulse_machine_temperature_celsius{site_id=~\"$site\",machine_id=~\"$machine\"}",
+        "legendFormat": "{{machine_id}}"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius",
+          "thresholds": {
+            "steps": [
+              { "color": "blue", "value": 0 },
+              { "color": "green", "value": 50 },
+              { "color": "yellow", "value": 80 },
+              { "color": "red", "value": 90 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Pressure (PSI) — $machine",
+      "gridPos": { "x": 8, "y": 0, "w": 8, "h": 8 },
+      "targets": [{
+        "expr": "plantpulse_machine_pressure_psi{site_id=~\"$site\",machine_id=~\"$machine\"}",
+        "legendFormat": "{{machine_id}}"
+      }],
+      "fieldConfig": { "defaults": { "unit": "pressurepsi" } }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Vibration (mm/s) — $machine",
+      "gridPos": { "x": 16, "y": 0, "w": 8, "h": 8 },
+      "targets": [{
+        "expr": "plantpulse_machine_vibration_mm_s{site_id=~\"$site\",machine_id=~\"$machine\"}",
+        "legendFormat": "{{machine_id}}"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "velocityms",
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": 0 },
+              { "color": "yellow", "value": 5 },
+              { "color": "red", "value": 7 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Current Machine Status",
+      "gridPos": { "x": 0, "y": 8, "w": 24, "h": 10 },
+      "targets": [{
+        "expr": "plantpulse_machine_severity_info{site_id=~\"$site\"}",
+        "legendFormat": "",
+        "instant": true,
+        "format": "table"
+      }],
+      "transformations": [
+        { "id": "organize", "options": {
+          "renameByName": {
+            "machine_id": "Machine ID",
+            "site_id": "Site",
+            "machine_type": "Type",
+            "severity": "Severity",
+            "status": "Status"
+          }
+        }}
+      ]
+    }
+  ]
+}

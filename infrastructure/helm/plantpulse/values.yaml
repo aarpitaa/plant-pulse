@@ -1,0 +1,166 @@
+# PlantPulse Helm values — override per environment via values-{env}.yaml
+
+global:
+  imageRegistry: ghcr.io/plantpulse
+  imagePullPolicy: IfNotPresent
+  environment: production
+
+# ─── API Server ───────────────────────────────────────────────────────────────
+apiServer:
+  enabled: true
+  image:
+    repository: api-server
+    tag: latest
+  replicas: 2
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+  service:
+    type: ClusterIP
+    port: 8080
+  ingress:
+    enabled: true
+    className: nginx
+    host: api.plantpulse.internal
+    tls: true
+  env:
+    LOG_LEVEL: info
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+# ─── Equipment Simulator ─────────────────────────────────────────────────────
+equipmentSimulator:
+  enabled: true
+  image:
+    repository: equipment-simulator
+    tag: latest
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  env:
+    EVENTS_PER_SECOND: "100"
+    ANOMALY_MODE: "none"
+
+# ─── Ingestion Service ────────────────────────────────────────────────────────
+ingestionService:
+  enabled: true
+  image:
+    repository: ingestion-service
+    tag: latest
+  replicas: 3
+  resources:
+    requests:
+      cpu: 200m
+      memory: 192Mi
+    limits:
+      cpu: 800m
+      memory: 384Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 60
+
+# ─── Health Processor ─────────────────────────────────────────────────────────
+healthProcessor:
+  enabled: true
+  image:
+    repository: health-processor
+    tag: latest
+  replicas: 2
+  resources:
+    requests:
+      cpu: 200m
+      memory: 192Mi
+    limits:
+      cpu: 800m
+      memory: 384Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 12
+    targetCPUUtilizationPercentage: 65
+
+# ─── Reliability Controller ───────────────────────────────────────────────────
+reliabilityController:
+  enabled: true
+  image:
+    repository: reliability-controller
+    tag: latest
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# ─── Kafka (Strimzi CRD) ─────────────────────────────────────────────────────
+kafka:
+  enabled: true
+  replicas: 3
+  storage:
+    type: persistent-claim
+    size: 100Gi
+  config:
+    offsets.topic.replication.factor: "3"
+    transaction.state.log.replication.factor: "3"
+    transaction.state.log.min.isr: "2"
+    log.message.format.version: "3.6"
+    inter.broker.protocol.version: "3.6"
+
+# ─── PostgreSQL ───────────────────────────────────────────────────────────────
+postgresql:
+  enabled: true
+  auth:
+    database: plantpulse
+    existingSecret: plantpulse-pg-credentials
+  primary:
+    persistence:
+      size: 50Gi
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+      limits:
+        cpu: 2000m
+        memory: 2Gi
+
+# ─── Operations UI ────────────────────────────────────────────────────────────
+operationsUI:
+  enabled: true
+  image:
+    repository: operations-ui
+    tag: latest
+  replicas: 2
+  service:
+    type: ClusterIP
+    port: 80
+  ingress:
+    enabled: true
+    className: nginx
+    host: plantpulse.internal
+    tls: true
+
+# ─── Monitoring ───────────────────────────────────────────────────────────────
+prometheus:
+  enabled: true
+  retention: 15d
+  storage: 50Gi
+
+grafana:
+  enabled: true
+  adminPasswordSecret: grafana-admin-secret
